@@ -118,6 +118,38 @@
     "registerLink": "Регистрация",
     "error": "Не удалось войти. Проверьте данные"
   },
+  "forgotPassword": {
+    "logo": "Reputa",
+    "title": "Восстановление пароля",
+    "identifier": "Логин или телефон",
+    "identifierPlaceholder": "Введите логин или телефон",
+    "submit": "Получить код",
+    "success": "Если аккаунт найден, код восстановления готов для ввода",
+    "error": "Не удалось запросить восстановление",
+    "back": "Вернуться ко входу"
+  },
+  "resetPassword": {
+    "logo": "Reputa",
+    "title": "Новый пароль",
+    "identifier": "Логин или телефон",
+    "identifierPlaceholder": "Введите логин или телефон",
+    "code": "Код восстановления",
+    "codePlaceholder": "XXXXXX",
+    "password": "Новый пароль",
+    "passwordConfirm": "Повторите пароль",
+    "passwordPlaceholder": "Введите новый пароль",
+    "submit": "Изменить пароль",
+    "success": "Пароль изменён. Теперь можно войти",
+    "error": "Не удалось изменить пароль",
+    "passwordMismatch": "Пароли не совпадают",
+    "passwordRules": {
+      "length": "От 8 до 64 символов",
+      "case": "Включает латинские строчные и заглавные буквы",
+      "digit": "Включает цифры",
+      "special": "Включает спецсимволы (!@#$_)"
+    },
+    "back": "Вернуться ко входу"
+  },
   "registrationWork": {
     "logo": "Reputa",
     "fullName": "ФИО",

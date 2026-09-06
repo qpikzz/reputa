@@ -21,8 +21,12 @@ from app.core.constants import (
     MSG_NOT_EMPLOYEE,
     MSG_EMPLOYEE_LOGIN_FORBIDDEN,
     STAFF_LOGIN_CODE,
+    PASSWORD_RESET_CODE,
+    MSG_PASSWORD_RESET_CODE_SENT,
+    MSG_INVALID_PASSWORD_RESET_CODE,
+    MSG_PASSWORD_RESET_SUCCESS,
 )
-from app.services.auth import create_access_token, hash_password
+from app.services.auth import create_access_token, hash_password, verify_password
 
 
 def _mock_db(existing_login=None, fail_commit=False, password_hash="x", role=UserRole.USER.value, count=1):
@@ -50,6 +54,8 @@ def _mock_db(existing_login=None, fail_commit=False, password_hash="x", role=Use
 
         def first(self):
             if self._existing_login is not None:
+                if hasattr(self, "_user"):
+                    return self._user
                 user = User(
                     id=1,
                     full_name="Иван",
@@ -60,6 +66,7 @@ def _mock_db(existing_login=None, fail_commit=False, password_hash="x", role=Use
                     telegram="@ivan",
                     role=self._role,
                 )
+                self._user = user
                 return user
             return None
 
@@ -430,6 +437,44 @@ class TestLoginEndpoint:
         assert resp.status_code == 403
         assert resp.json()["detail"] == MSG_EMPLOYEE_LOGIN_FORBIDDEN
         assert "access_token" not in resp.cookies
+
+
+class TestPasswordResetEndpoint:
+    PASSWORD = "Abcdef1!"
+
+    def setup_method(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+        self.db = _mock_db(existing_login="ivan", password_hash=hash_password(self.PASSWORD))
+        app.dependency_overrides[get_db] = lambda: self.db
+
+    def teardown_method(self):
+        app.dependency_overrides.clear()
+
+    def test_request_returns_generic_success_message(self):
+        response = self.client.post("/auth/password-reset/request", json={"identifier": "ivan"})
+
+        assert response.status_code == 200
+        assert response.json()["message"] == MSG_PASSWORD_RESET_CODE_SENT
+
+    def test_confirm_rejects_invalid_code(self):
+        response = self.client.post(
+            "/auth/password-reset/confirm",
+            json={"identifier": "ivan", "code": "000000", "password": "Newpass1!"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == MSG_INVALID_PASSWORD_RESET_CODE
+
+    def test_confirm_updates_password_hash(self):
+        response = self.client.post(
+            "/auth/password-reset/confirm",
+            json={"identifier": "ivan", "code": PASSWORD_RESET_CODE, "password": "Newpass1!"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == MSG_PASSWORD_RESET_SUCCESS
+        assert self.db.committed is True
+        assert verify_password("Newpass1!", self.db.first().password_hash)
 
 
 class TestCreateAccessToken:
