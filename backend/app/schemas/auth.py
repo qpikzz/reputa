@@ -150,6 +150,30 @@ class EmployeeLoginRequest(_CredentialsBase):
         return _strip_required(v, "Код не может быть пустым")
 
 
+class PasswordResetRequest(BaseModel):
+    identifier: str
+
+    @field_validator("identifier")
+    @classmethod
+    def validate_identifier(cls, v: str) -> str:
+        return _strip_required(v, "Логин или телефон не может быть пустым")
+
+
+class PasswordResetConfirmRequest(PasswordResetRequest):
+    code: str
+    password: str
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        return _strip_required(v, "Код не может быть пустым")
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_field(cls, v: str) -> str:
+        return validate_password(v)
+
+
 class LoginResponse(BaseModel):
     id: int
     full_name: str

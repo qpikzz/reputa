@@ -9,8 +9,13 @@ from app.core.constants import (
     MSG_INVALID_STAFF_CODE,
     MSG_NOT_EMPLOYEE,
     MSG_EMPLOYEE_LOGIN_FORBIDDEN,
+    MSG_PASSWORD_RESET_CODE_SENT,
+    MSG_INVALID_PASSWORD_RESET_CODE,
+    MSG_ACCOUNT_NOT_FOUND,
+    MSG_PASSWORD_RESET_SUCCESS,
     COOKIE_NAME,
     STAFF_LOGIN_CODE,
+    PASSWORD_RESET_CODE,
 )
 from app.api.deps import get_current_user
 from app.db.session import get_db
@@ -23,6 +28,8 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     EmployeeLoginRequest,
+    PasswordResetRequest,
+    PasswordResetConfirmRequest,
 )
 from app.schemas.profile import ProfileResponse, ProfileUpdateRequest
 from app.services.auth import create_access_token, hash_password, verify_password
@@ -231,6 +238,32 @@ def employee_login(body: EmployeeLoginRequest, response: Response, db: Session =
 
     _set_auth_cookie(response, user)
     return user
+
+
+@router.post("/password-reset/request")
+def request_password_reset(body: PasswordResetRequest, db: Session = Depends(get_db)):
+    db.query(User).filter((User.login == body.identifier) | (User.phone == body.identifier)).first()
+    return {"message": MSG_PASSWORD_RESET_CODE_SENT}
+
+
+@router.post("/password-reset/confirm")
+def confirm_password_reset(body: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    if body.code != PASSWORD_RESET_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=MSG_INVALID_PASSWORD_RESET_CODE,
+        )
+
+    user = db.query(User).filter((User.login == body.identifier) | (User.phone == body.identifier)).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=MSG_ACCOUNT_NOT_FOUND,
+        )
+
+    user.password_hash = hash_password(body.password)
+    db.commit()
+    return {"message": MSG_PASSWORD_RESET_SUCCESS}
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

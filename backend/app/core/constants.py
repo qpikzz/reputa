@@ -68,6 +68,9 @@ PWD_SCHEME_BCRYPT = "bcrypt"
 # Код сотрудника для входа (MVP: статичный код, без реальной отправки SMS)
 STAFF_LOGIN_CODE = "123456"
 
+# Код восстановления пароля (MVP: статичный код, без реальной отправки SMS)
+PASSWORD_RESET_CODE = STAFF_LOGIN_CODE
+
 # Идентификатор сотрудника (AUTH-010): одна англ. буква + 3 цифры + literal
 # "room19" (например "A123room19"). Для MVP проверяется только формат — список
 # или база допустимых идентификаторов не вводятся (см. AUTH-010.md).
@@ -118,6 +121,10 @@ MSG_INVALID_CREDENTIALS = "Неверный логин или пароль"
 MSG_INVALID_STAFF_CODE = "Неверный код"
 MSG_NOT_EMPLOYEE = "Вход разрешён только сотрудникам"
 MSG_EMPLOYEE_LOGIN_FORBIDDEN = "Сотрудник входит через вход сотрудника"
+MSG_PASSWORD_RESET_CODE_SENT = "Если аккаунт найден, код восстановления доступен для ввода"
+MSG_INVALID_PASSWORD_RESET_CODE = "Неверный код восстановления"
+MSG_ACCOUNT_NOT_FOUND = "Аккаунт не найден"
+MSG_PASSWORD_RESET_SUCCESS = "Пароль успешно изменён"
 MSG_APPLICATION_NOT_FOUND = "Заявка не найдена"
 MSG_THRESHOLD_OUT_OF_RANGE = "Порог должен быть в диапазоне от 0 до 100"
 MSG_THRESHOLD_REJECT_BELOW_APPROVE = "Порог авто-отклонения должен быть меньше порога авто-одобрения"
