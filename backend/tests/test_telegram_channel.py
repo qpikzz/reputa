@@ -92,8 +92,25 @@ class TestParseChannelPage:
         assert second.text == "Второе сообщение без времени"
         assert second.date is None
 
-    def test_messages_without_text_are_skipped(self):
-        # Пост-медиа без подписи не содержит js-message_text — пропускается.
+    def test_messages_without_text_but_with_photo_are_kept(self):
+        # TG-002: посты-фото без подписи не выбрасываются — их распознаёт OCR.
+        page = (
+            '<div class="tgme_widget_message_wrap js-widget_message_wrap" data-post="ch/1">'
+            '<div class="tgme_widget_message"><a class="tgme_widget_message_photo_wrap" '
+            "style=\"background-image:url('https://cdn4.telesco.pe/file/pic.jpg')\"></a>"
+            "</div></div>"
+            '<div class="tgme_widget_message_wrap js-widget_message_wrap" data-post="ch/2">'
+            '<div class="tgme_widget_message_text js-message_text" dir="auto">Текст</div>'
+            "</div>"
+        )
+        result = parse_channel_page(page, "ch")
+        assert len(result.messages) == 2
+        assert result.messages[0].text == ""
+        assert result.messages[0].photo_urls == ["https://cdn4.telesco.pe/file/pic.jpg"]
+        assert result.messages[1].text == "Текст"
+
+    def test_messages_without_text_and_photo_are_skipped(self):
+        # Пустой медиа-пост без текста и без фото (стример и т.п.) — пропускается.
         page = (
             '<div class="tgme_widget_message_wrap js-widget_message_wrap" data-post="ch/1">'
             '<div class="tgme_widget_message"><a class="tgme_widget_message_photo_wrap" href="#"></a>'
@@ -110,6 +127,37 @@ class TestParseChannelPage:
         result = parse_channel_page("<html><body></body></html>", "channel")
         assert isinstance(result, ParsedTelegramChannel)
         assert result.messages == []
+
+    def test_photo_urls_extracted_from_bg_image(self):
+        # TG-002 (OCR): ссылки на фото — CSS background-image фото-обёртки.
+        page = (
+            '<div class="tgme_widget_message_wrap js-widget_message_wrap" data-post="ch/1">'
+            '<div class="tgme_widget_message">'
+            '<a class="tgme_widget_message_photo_wrap" href="https://t.me/ch/1" '
+            "style=\"width:800px;background-image:url('https://cdn4.telesco.pe/file/abc.jpg')\">"
+            '<div class="tgme_widget_message_photo"></div>'
+            "</a>"
+            '<div class="tgme_widget_message_text js-message_text" dir="auto">Пост с фото</div>'
+            "</div></div>"
+        )
+        result = parse_channel_page(page, "ch")
+        assert len(result.messages) == 1
+        assert result.messages[0].photo_urls == ["https://cdn4.telesco.pe/file/abc.jpg"]
+
+    def test_photo_urls_scheme_relative_become_https(self):
+        page = (
+            '<div class="tgme_widget_message_wrap" data-post="ch/1">'
+            '<a class="tgme_widget_message_photo_wrap" '
+            "style=\"background-image:url('//cdn4.telesco.pe/file/x.jpg')\"></a>"
+            '<div class="tgme_widget_message_text js-message_text">текст</div>'
+            "</div>"
+        )
+        result = parse_channel_page(page, "ch")
+        assert result.messages[0].photo_urls == ["https://cdn4.telesco.pe/file/x.jpg"]
+
+    def test_photo_urls_empty_when_no_photo(self):
+        result = parse_channel_page(SAMPLE_PAGE, "channel")
+        assert all(msg.photo_urls == [] for msg in result.messages)
 
 
 class TestFetchChannelMessages:

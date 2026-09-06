@@ -11,6 +11,8 @@ PyJWT==2.10.1
 python-multipart==0.0.20
 numpy==2.2.6
 pdfplumber==0.11.10
+google-genai==2.22.0
+gigachat==0.2.3
 
 # Тестовые зависимости
 pytest==9.1.1
