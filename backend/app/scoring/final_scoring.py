@@ -1,49 +1,33 @@
-import numpy as np
-import os
-
-from app.scoring.stmt_parser import parse_statement
-from app.scoring.stmt_scoring import score_statement, StatementScoringResult
+from app.scoring.stmt_scoring import StatementScoringResult
 from app.scoring.telegram_scoring import TelegramScoringResult
-from app.scoring.telegram_channel import fetch_channel_messages
-from app.scoring.telegram_llm import score_telegram_with_llm
-from app.scoring.model_training import load_model_artifacts, predict_from_pdf
 
 
-'''
-�������� �� ���� ����� ������ � �������, ���������� ��������� ������
-'''
-def process_raw_application(pdf_path: str, tg_username: str | None = None) -> dict:
-    # 1
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"���� ������� �� ������: {pdf_path}")
-        
-    with open(pdf_path, "rb") as f:
-        parsed_stmt = parse_statement(f.read())
-        
-    stmt_result = score_statement(parsed_stmt)
+# TG-003: объединение оценки по банковской выписке (STMT-002) и
+# Telegram-канала (TG-002) в единый итоговый балл.
+#
+# Формула (если есть оба сигнала):
+#   final_score = stmt_score * 0.7 + tg_score_contribution * 0.3
+#
+# Если Telegram-сигнал отсутствует (канал не указан, недоступен или
+# недостаточно данных) — используется только оценка по выписке (100%).
 
-    # 2
-    loaded_model, loaded_scaler, loaded_cols = load_model_artifacts("artifacts")
-    model_prediction = predict_from_pdf(pdf_path, loaded_model, loaded_scaler, loaded_cols)
+# Метрики портрета (0–10) и текстовый отчёт складываются / усредняются
+# из обоих источников при наличии Telegram-данных.
 
-    # 3
-    tg_result = None
-    if tg_username:
-        channel_data = fetch_channel_messages(tg_username)
-        if channel_data:
-            tg_result = score_telegram_with_llm(channel_data)
-
-    return calculate_final_profile(model_predsiction, stmt_result, tg_result)
+_WEIGHT_STMT = 0.7
+_WEIGHT_TG = 0.3
 
 
-"""
-���������� ���������� �������� �� �������, ������������ ������ � ������ �� Telegram-������.
-"""
-def calculate_final_profile(model_prediction: int,
+def calculate_final_profile(
     stmt_result: StatementScoringResult,
-    tg_result: TelegramScoringResult | None = None
+    tg_result: TelegramScoringResult | None = None,
 ) -> dict:
+    """Объединяет оценку по выписке и Telegram-сигнал в итоговый профиль.
 
+    Если tg_result не передан или равен None — возвращает результат
+    исключительно по выписке (100% вес stmt_result). При наличии
+    Telegram-сигнала используется формула 70/30.
+    """
     if not tg_result:
         return {
             "score": stmt_result["score"],
@@ -55,17 +39,26 @@ def calculate_final_profile(model_prediction: int,
             "report_content": stmt_result["report_content"],
         }
 
-    if not model_prediction:
-        model_prediction = stmt_result["score"]
+    stmt_score = stmt_result["score"]
+    tg_score = tg_result["score_contribution"]
 
-    final_score = int(np.clip(round(model_prediction * 0.7 + tg_result["score_contribution"] * 0.3), 0, 100))
+    final_score = int(
+        round(stmt_score * _WEIGHT_STMT + tg_score * _WEIGHT_TG)
+    )
+    final_score = max(0, min(100, final_score))
 
     positive_signals = stmt_result["positive_signals"] + tg_result["positive_signals"]
     risk_factors = stmt_result["risk_factors"] + tg_result["risk_factors"]
 
-    stability = int(np.clip(round((stmt_result["stability_score"] + tg_result["stability_score"]) / 2.0), 0, 10))
-    fin_lit = int(np.clip(round((stmt_result["financial_literacy_score"] + tg_result["financial_literacy_score"]) / 2.0), 0, 10))
-    resp = int(np.clip(round((stmt_result["responsibility_score"] + tg_result["responsibility_score"]) / 2.0), 0, 10))
+    def _avg(a: int, b: int) -> int:
+        return max(0, min(10, round((a + b) / 2.0)))
+
+    stability = _avg(stmt_result["stability_score"], tg_result["stability_score"])
+    fin_lit = _avg(
+        stmt_result["financial_literacy_score"],
+        tg_result["financial_literacy_score"],
+    )
+    resp = _avg(stmt_result["responsibility_score"], tg_result["responsibility_score"])
 
     report_content = f"{stmt_result['report_content']}\n\n{tg_result['report_content']}"
 

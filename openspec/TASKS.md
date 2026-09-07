@@ -138,9 +138,11 @@
 
   При загрузке файл сразу парсится в структурированные данные (остаток, поступления, траты по категориям за 3 месяца). Сам файл не сохраняется — хранятся только структурированные данные. Реализовано в `app/scoring/stmt_parser.py` (Альфа-Банк, СберБанк, Озон Банк), подключено в `POST /applications` как валидация загружаемой выписки; фикстуры и тесты — `tests/test_statement_parser.py`, `tests/fixtures/`.
 
-- [ ] **STMT-002** — Расчёт скоринга по выписке
+- [x] **STMT-002** — Расчёт скоринга по выписке
 
   Расчёт вклада в итоговую оценку на основе среднего остатка, регулярности поступлений, доли трат на необходимые товары. Формирует часть позитивных сигналов / факторов риска в ScoreResult.
+
+  > Реализовано (см. `openspec/tasks/STMT-002.md`): `backend/app/scoring/stmt_scoring.py` — `calculate_statement_features` → `calculate_score_from_features` (базовые 50, модификаторы −25…+20, clamp 0–100) → `score_statement(statement)`, возвращает `StatementScoringResult` (score, сигналы/риски, метрики портрета 0–10, отчёт). Подключено в `POST /applications` как «выписочная» часть итоговой оценки через `calculate_final_profile` (TG-003, вес 0.7); работает и без telegram-данных (тогда итог = 100% по выписке).
 
 - [x] **APP-003** — Пороговая автообработка заявки
 
@@ -223,9 +225,12 @@
   > **OCR фото** (дополнительно к TG-002): `backend/app/scoring/telegram_vision.py` — фото из постов (`photo_urls`, извлекаются парсером `telegram_channel.py`) скачиваются и распознаются через **Gemini 3.6 Flash** (ключ `GEMINI_API_KEY`, см. `.env`); распознанный текст (переводы, чеки, скрины банка) добавляется к корпусу поста перед анализом лексики. Без ключа или при ошибке сети/Gemini обогащение молча отключается — анализ работает по тексту.
   > **LLM-анализ GigaChat** (дополнительно к TG-002): `backend/app/scoring/telegram_llm.py` — семантический анализ корпуса + NER переводов (направление income/expense/transfer) через **GigaChat API Сбера** (Authorization Key `GIGACHAT_CREDENTIALS`, поток GigaChat-2). Скоринг-формула единая (`_score_from_evidence`); при недоступности GigaChat (нет ключа, ошибка, невалидный JSON) — откат на словарные эвристики `score_telegram()`. См. `openspec/tasks/TG-002.md`.
 
-- [ ] **TG-003** — Интеграция telegram-сигнала в итоговую оценку
+- [x] **TG-003** — Интеграция telegram-сигнала в итоговую оценку
 
   Объединение сигнала из TG-002 с оценкой по выписке (STMT-002) в единый итоговый балл. Должно работать и в отсутствие telegram-сигнала (см. TG-001) — тогда используется только оценка по выписке.
+
+  > Реализовано (см. `openspec/tasks/TG-003.md`): `backend/app/scoring/final_scoring.py` переписан — `calculate_final_profile(stmt_result, tg_result=None)`, формула `round(stmt·0.7 + tg·0.3)` (clamp 0–100); сигналы/риски/отчёт объединяются, метрики портрета усредняются; без telegram — итог = 100% по выписке. Подключено в `POST /applications` (APP-002): `score_statement` → при наличии `telegram_channel` → `fetch_channel_messages` (TG-001) → `enrich_channel_with_ocr` (OCR) → `score_telegram_with_llm` (GigaChat с откатом на эвристики) → `calculate_final_profile` → `ScoreResult` → автообработка APP-003.
+  > **Архитектурное решение:** источник «выписочной» части — эвристика `stmt_scoring.score_statement` (STMT-002), а НЕ ML-модель: `model_training.py` обучался на синтетике из той же `calculate_score_from_features` (независимого сигнала не добавлял). `model_training.py` и `backend/artifacts/*.pkl` удалены как мёртвый код.
 
 ## Технический долг / чистка
 
@@ -240,3 +245,14 @@
 - [x] **CLEAN-001** — Убрать BOM (U+FEFF) из `backend/app/scoring/stmt_parser.py` и `backend/app/scoring/stmt_scoring.py`
 
   Файлы начинаются с байта U+FEFF (BOM), оставшегося после merge-конфликтов. Загрузке и тестам не мешает (Python его игнорирует), но это мусор в начале файла. Пересохранить оба файла без BOM и убедиться, что `tests/test_statement_parser.py` и остальной набор pytest продолжают проходить.
+
+- [x] **CLEAN-002** — Удаление подтверждённого мёртвого кода
+
+  По результатам диагностики (повторный grep по каждому файлу перед удалением):
+  - `frontend/src/components/PlaceholderPage.jsx` — не импортируется нигде;
+  - `backend/app/scoring/model_training.py` + `backend/artifacts/*.pkl` — ML-модель обучалась на синтетике из той же эвристики `calculate_score_from_features`, что и прод-путь; решение TG-003 — использовать `stmt_scoring` (см. `openspec/tasks/TG-003.md`);
+  - `backend/vipiski/*` (Sber/alha/ozon PDF) — исходные выписки, копии используются как тест-фикстуры `tests/fixtures/`;
+  - `backend/test.db` — случайно закоммиченная SQLite-база;
+  - `frontend/screenshot.cjs` — скрипт-заглушка;
+  - `tatus` — случайно закоммиченный вывод `git branch` (текстовый файл, не исполняемый);
+  - `frontend-temp/` — **не удалён** (референсные макеты, прямое указание).

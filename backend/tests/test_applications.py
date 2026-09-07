@@ -77,7 +77,7 @@ def _mock_db(fail_commit=False):
         def flush(self):
             for obj in self.added:
                 if getattr(obj, "id", None) is None:
-                    obj.id = 1
+                    obj.id = generate_application_id()
 
         def rollback(self):
             self.rolled_back = True
@@ -139,9 +139,14 @@ class TestCreateApplicationEndpoint:
     def setup_method(self):
         self.client = TestClient(app, raise_server_exceptions=False)
         self.user = _current_user()
+        # Telegram-скоринг (TG-001/002/003) не должен ходить в сеть в тестах:
+        # мокаем парсинг канала как недоступный → итоговая оценка только по выписке.
+        self._orig_fetch = applications_module.fetch_channel_messages
+        applications_module.fetch_channel_messages = lambda ch: None
 
     def teardown_method(self):
         app.dependency_overrides.clear()
+        applications_module.fetch_channel_messages = self._orig_fetch
 
     def _set_db(self, db):
         app.dependency_overrides[get_db] = lambda: db
@@ -182,7 +187,8 @@ class TestCreateApplicationEndpoint:
         assert body["telegram"] == "@ivan"
         assert body["telegram_channel"] == "@ivan_channel"
         assert body["status"] == APPLICATION_STATUS_IN_QUEUE
-        assert body["score"] == 87
+        # Канал в тесте замокан как недоступный → оценка только по выписке (STMT-002).
+        assert body["score"] == 80
 
         assert db.committed is True
         assert len(db.added) == 2
@@ -213,7 +219,7 @@ class TestCreateApplicationEndpoint:
         assert created.purpose == "Ремонт квартиры"
         assert created.telegram == "@ivan"
         assert created.telegram_channel == "@ivan_channel"
-        assert created.score == 87
+        assert created.score == 80
 
     def test_create_application_rolls_back_when_scoring_fails(self, monkeypatch):
         def fail_scoring(parsed_statement):

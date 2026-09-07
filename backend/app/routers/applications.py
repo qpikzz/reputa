@@ -24,8 +24,12 @@ from app.schemas.application import (
     ApplicationDecisionRequest,
     ApplicationResponse,
 )
+from app.scoring.final_scoring import calculate_final_profile
 from app.scoring.stmt_parser import StatementParseError, parse_statement
 from app.scoring.stmt_scoring import score_statement
+from app.scoring.telegram_channel import fetch_channel_messages
+from app.scoring.telegram_llm import score_telegram_with_llm
+from app.scoring.telegram_vision import enrich_channel_with_ocr
 from app.services.auto_processing import apply_auto_decision
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -86,8 +90,24 @@ async def create_application(
     db.add(application)
     db.flush()
     try:
-        score_result = score_statement(parsed_statement)
+        # STMT-002: оценка по банковской выписке.
+        stmt_result = score_statement(parsed_statement)
+
+        # TG-001/TG-002/TG-003: Telegram-скоринг (если канал указан).
+        # Канал недоступен → tg_result = None → итоговая оценка только
+        # по выписке, без блокировки создания заявки (см. PLAN.md «Откат»).
+        tg_result = None
+        tg_channel = (data.telegram_channel or "").strip()
+        if tg_channel:
+            channel_data = fetch_channel_messages(tg_channel)
+            if channel_data and channel_data.messages:
+                channel_data = enrich_channel_with_ocr(channel_data)
+                tg_result = score_telegram_with_llm(channel_data)
+
+        # TG-003: объединение сигналов в единый профиль.
+        score_result = calculate_final_profile(stmt_result, tg_result)
         application.score = score_result["score"]
+
         db.add(
             ScoreResult(
                 application_id=application.id,
